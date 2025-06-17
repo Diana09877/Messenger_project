@@ -25,7 +25,8 @@ SECRET_KEY = 'django-insecure-@e2b53ebx54%pr$mc((c7sazlfjry*#yag@wn%kskpm5kq)o=$
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'MessengerProject.pythonanywhere.com']
+
 
 
 # Application definition
