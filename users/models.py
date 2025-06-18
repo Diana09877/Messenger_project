@@ -2,7 +2,6 @@ from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
 from django.db import models
 from users.managers import CustomUserManager
 
-
 class CustomUser(AbstractBaseUser, PermissionsMixin):
     """Модель для кастомного пользователя"""
     phone_number = models.CharField(max_length=20, unique=True)

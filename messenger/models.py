@@ -62,7 +62,9 @@ class Message(models.Model):
     )
     content = models.TextField(
         verbose_name='Текст сообщения',
-        validators=[MinLengthValidator(1, "Сообщение не может быть пустым")]
+        validators=[MinLengthValidator(
+            1,
+            "Сообщение не может быть пустым")]
     )
     created_at = models.DateTimeField(
         auto_now_add=True,

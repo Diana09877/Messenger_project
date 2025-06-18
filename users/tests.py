@@ -1,72 +1,116 @@
 from rest_framework.test import APITestCase
-from django.urls import reverse
 from rest_framework import status
-from .models import CustomUser
-from rest_framework.authtoken.models import Token
+from django.urls import reverse
+from messenger.models import CustomUser
 
-class UserTests(APITestCase):
 
+class UserProfileAPITest(APITestCase):
     def setUp(self):
-        self.user_data = {
-            'phone_number': '0555980082',
-            'password': 'password_123',
-            'first_name': '',
-            'last_name': ''
-
-        }
-
         self.user = CustomUser.objects.create_user(
-            phone_number=self.user_data['phone_number'],
-            first_name=self.user_data['first_name'],
-            last_name=self.user_data['last_name'],
-            password=self.user_data['password']
+            phone_number='+123456789',
+            password='password123',
+            first_name='Timur',
+            last_name='Avazbekov'
         )
-        self.token = Token.objects.create(user=self.user)
-        self.auth_header = {'HTTP_AUTHORIZATION': f'Token {self.token.key}'}
+        self.client.force_authenticate(user=self.user)
+        self.url = reverse('user-profile')
 
-    def test_registration(self):
-        url = reverse('register')
+    def test_get_user_profile(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['phone_number'], '+123456789')
+        self.assertEqual(response.data['first_name'], 'Timur')
+
+    def test_update_user_profile_put(self):
         data = {
-            'phone_number': '1234567',
-            'first_name': '',
-            'last_name': '',
-            'password': 'qwerty0987654',
+            'first_name': 'Artur',
+            'last_name': 'Arturov',
         }
-        response = self.client.post(url, data)
+        response = self.client.put(self.url, data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.first_name, 'Artur')
+        self.assertEqual(self.user.last_name, 'Arturov')
+
+    def test_partial_update_user_profile_patch(self):
+        data = {
+            'first_name': 'Adilet'
+        }
+        response = self.client.patch(self.url, data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.first_name, 'Adilet')
+
+
+class AuthTests(APITestCase):
+    def setUp(self):
+        self.register_url = reverse('register')
+        self.login_url = reverse('login')
+        self.phone_number = '+1234567890'
+        self.password = 'securepassword123'
+
+    def test_user_registration(self):
+        data = {
+            'phone_number': self.phone_number,
+            'password': self.password,
+
+        }
+        response = self.client.post(self.register_url, data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertIn('token', response.data)
+        self.assertTrue(CustomUser.objects.filter(phone_number=self.phone_number).exists())
 
-    def test_login(self):
-        url = reverse('login')
+    def test_user_login(self):
+        CustomUser.objects.create_user(phone_number=self.phone_number, password=self.password)
+
         data = {
-            'phone_number': self.user_data['phone_number'],
-            'password': self.user_data['password'],
+            'phone_number': self.phone_number,
+            'password': self.password
         }
-        response = self.client.post(url, data)
+        response = self.client.post(self.login_url, data)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('token', response.data)
 
-    def test_get_profile_authenticated(self):
-        url = reverse('user-profile')
-        response = self.client.get(url, **self.auth_header)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['phone_number'], self.user_data['phone_number'])
 
-    def test_update_profile_partial(self):
-        url = reverse('user-profile')
-        data = {'first_name': ''}
-        response = self.client.patch(url, data, **self.auth_header)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['first_name'], '')
-
-    def test_user_search(self):
-        CustomUser.objects.create_user(
-            phone_number='777555000',
-            first_name='Иван',
-            last_name='',
-            password='asdfg5555'
+class UserSearchAPITest(APITestCase):
+    def setUp(self):
+        self.user1 = CustomUser.objects.create_user(
+            phone_number='+12345678',
+            password='testpassword',
+            first_name='Maksat'
         )
-        url = reverse('user-search') + '?search=Ива'
-        response = self.client.get(url, **self.auth_header)
+        self.user2 = CustomUser.objects.create_user(
+            phone_number='+87654321',
+            password='testpassword',
+            first_name='Asema'
+        )
+        self.user3 = CustomUser.objects.create_user(
+            phone_number='+11112222',
+            password='testpassword',
+            first_name='Adilet'
+        )
+
+        self.client.force_authenticate(user=self.user1)
+
+    def test_search_by_phone_number(self):
+        url = reverse('user-search')
+        response = self.client.get(url, {'search': '+8765'})
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertTrue(any('Иван' in user['first_name'] for user in response.data))
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['phone_number'], '+87654321')
+
+    def test_search_by_first_name(self):
+        url = reverse('user-search')
+        response = self.client.get(url, {'search': 'Adi'})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['first_name'], 'Adilet')
+
+    def test_search_excludes_current_user(self):
+        url = reverse('user-search')
+        response = self.client.get(url, {'search': '+123'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 0)
+
+

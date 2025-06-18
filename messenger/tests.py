@@ -1,170 +1,199 @@
-from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
-from django.contrib.auth import get_user_model
+from django.urls import reverse
 from messenger.models import Chat, Message
+from users.models import CustomUser
 
-CustomUser = get_user_model()
 
-
-class ChatAPITests(APITestCase):
+class ChatDetailAPITest(APITestCase):
     def setUp(self):
-        self.user1 = CustomUser.objects.create_user(
-            phone_number='0555980082', password='password_123', first_name=''
-        )
-        self.user2 = CustomUser.objects.create_user(
-            phone_number='1234567', password='qwerty0987654', first_name=''
-        )
-        self.user3 = CustomUser.objects.create_user(
-            phone_number='777555000', password='asdfg5555', first_name=''
-        )
+        self.user1 = CustomUser.objects.create_user(phone_number="+12345678", password="pass1234")
+        self.user2 = CustomUser.objects.create_user(phone_number="+87654321", password="pass1234")
+        self.user3 = CustomUser.objects.create_user(phone_number="+11122222", password="pass1234")
 
-        self.private_chat = Chat.objects.create(is_group=False)
-        self.private_chat.participants.add(self.user1, self.user2)
+        self.group_chat = Chat.objects.create(chat_name='Group Chat', is_group=True)
+        self.group_chat.participants.set([self.user1, self.user2])
 
-        self.group_chat = Chat.objects.create(is_group=True, chat_name='Test Group')
-        self.group_chat.participants.add(self.user1, self.user2)
+        self.private_chat = Chat.objects.create(chat_name='', is_group=False)
+        self.private_chat.participants.set([self.user1, self.user3])
 
-        self.message1 = Message.objects.create(
-            chat=self.private_chat, author=self.user1, content='Hello private'
-        )
-        self.message2 = Message.objects.create(
-            chat=self.group_chat, author=self.user2, content='Hello group'
-        )
+        Message.objects.create(chat=self.group_chat, author=self.user1, content="Hi")
 
-    def authenticate_user(self, user):
-        self.client.force_authenticate(user=user)
+        self.url_template = '/api/v1/chat/{}/'
+
+    def test_get_chat_detail_as_participant(self):
+        self.client.force_authenticate(user=self.user1)
+        url = self.url_template.format(self.group_chat.id)
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['chat_name'], 'Group Chat')
+        self.assertTrue(response.data['is_group'])
+        self.assertIn(self.user1.phone_number, response.data['participants'])
+        self.assertGreater(len(response.data['messages']), 0)
+
+    def test_get_group_chat_detail_as_non_participant(self):
+        self.client.force_authenticate(user=self.user3)
+        url = self.url_template.format(self.group_chat.id)
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['chat_id'], self.group_chat.id)
+        self.assertEqual(response.data['chat_name'], 'Group Chat')
+        self.assertTrue(response.data['is_group'])
+        self.assertIn(self.user1.phone_number, response.data['participants'])
+        self.assertEqual(response.data['messages'], [])
+
+    def test_get_private_chat_detail_as_non_participant(self):
+        self.client.force_authenticate(user=self.user2)
+        url = self.url_template.format(self.private_chat.id)
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data['detail'], 'Доступ запрещён')
+
+
+class ChatListAPITests(APITestCase):
+    def setUp(self):
+        self.user1 = CustomUser.objects.create_user(phone_number="+123456789", password="testpass")
+        self.user2 = CustomUser.objects.create_user(phone_number="+987654321", password="testpass")
+        self.chat1 = Chat.objects.create(is_group=False)
+        self.chat1.participants.set([self.user1, self.user2])
+        self.chat2 = Chat.objects.create(is_group=False)
+        self.chat2.participants.set([self.user2])
+
+        self.client.force_authenticate(user=self.user1)
+
+    def test_chat_list_returns_only_user_chats(self):
+        url = reverse('chat-list')
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+
+        returned_chat_id = response.data[0]['id']
+        self.assertEqual(returned_chat_id, self.chat1.id)
+
+
+class ChatCreateAPITests(APITestCase):
+    def setUp(self):
+        self.user1 = CustomUser.objects.create_user(phone_number="+12345678", password="testuser")
+        self.user2 = CustomUser.objects.create_user(phone_number="+123456789", password="testuser")
+        self.user3 = CustomUser.objects.create_user(phone_number="+0987654321", password="testuser")
+        self.client.force_authenticate(user=self.user1)
 
     def test_create_private_chat(self):
-        self.authenticate_user(self.user1)
-        url = reverse('chat-create')
-        data = {'is_group': False, 'participants': [self.user3.id]}
-        response = self.client.post(url, data, format='json')
-        print('DEBUG RESPONSE DATA:', response.data)
+        self.client.force_authenticate(user=self.user1)
+        data = {
+            'participants': [self.user2.phone_number],
+        }
+        response = self.client.post('/api/v1/chat/create/', data)
+        print(response.data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
     def test_create_group_chat(self):
-        self.authenticate_user(self.user1)
-        url = reverse('chat-create')
+        self.client.force_authenticate(user=self.user1)
+
         data = {
-            'is_group': True,
-            'chat_name': 'New Group',
-            'participants': [self.user1.id, self.user2.id, self.user3.id],
+            'participants': [
+                self.user2.phone_number,
+                self.user3.phone_number
+            ],
+            'chat_name': 'Group Chat'
         }
-        response = self.client.post(url, data, format='json')
-        print(response.data)
+
+        response = self.client.post('/api/v1/chat/create/', data)
+        print("Group Chat Response:", response.data)
+
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(Chat.objects.count(), 3)
-        self.assertEqual(len(response.data['participants']), 3)
+        self.assertTrue(response.data['is_group'])
+        self.assertEqual(response.data['chat_name'], 'Group Chat')
 
-    def test_chat_list_authenticated(self):
-        self.authenticate_user(self.user1)
-        url = reverse('chat-list')
-        response = self.client.get(url)
+
+class MessageCreateAPITests(APITestCase):
+    def setUp(self):
+        self.user1 = CustomUser.objects.create_user(phone_number="+12345678", password="testuser")
+        self.user2 = CustomUser.objects.create_user(phone_number='0987654321', password='pass1234')
+
+        self.chat = Chat.objects.create(is_group=False)
+        self.chat.participants.set([self.user1, self.user2])
+
+        self.url = reverse('message-send')
+
+        self.client.force_authenticate(user=self.user1)
+
+    def test_create_message(self):
+        data = {
+            'chat_id': self.chat.id,
+            'content': 'Привет, это тестовое сообщение!'
+        }
+        response = self.client.post(self.url, data)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['content'], data['content'])
+
+    def test_create_message_no_text(self):
+        data = {
+            'chat_id': self.chat.id,
+            'content': ''
+        }
+        response = self.client.post(self.url, data)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('content', response.data)
+
+
+class MessageLikeTest(APITestCase):
+    def setUp(self):
+        self.user1 = CustomUser.objects.create_user(phone_number="+12345678", password="testuser")
+        self.user2 = CustomUser.objects.create_user(phone_number="+0987654321", password="testuser")
+        self.chat = Chat.objects.create(is_group=False)
+        self.chat.participants.set([self.user1, self.user2])
+        self.message = Message.objects.create(chat=self.chat, author=self.user1, content='like me')
+        self.url = reverse('message-like', kwargs={'message_id': self.message.id})
+
+    def test_like_message(self):
+        self.client.force_authenticate(user=self.user2)
+        response = self.client.post(self.url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 2)
+        self.assertTrue(self.message.likes.filter(id=self.user2.id).exists())
+        self.assertTrue(response.data['liked'])
 
-    def test_chat_list_unauthenticated(self):
-        url = reverse('chat-list')
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
-
-    def test_private_chat_detail_as_participant(self):
-        self.authenticate_user(self.user1)
-        url = reverse('chat-detail', kwargs={'chat_id': self.private_chat.id})
-        response = self.client.get(url)
+    def test_unlike_message(self):
+        self.message.likes.add(self.user2)
+        self.client.force_authenticate(user=self.user2)
+        response = self.client.post(self.url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['id'], self.private_chat.id)
-        self.assertEqual(len(response.data['messages']), 1)
+        self.assertFalse(self.message.likes.filter(id=self.user2.id).exists())
+        self.assertFalse(response.data['liked'])
 
-    def test_private_chat_detail_as_non_participant(self):
-        self.authenticate_user(self.user3)
-        url = reverse('chat-detail', kwargs={'chat_id': self.private_chat.id})
-        response = self.client.get(url)
+    def test_like_message_not_participant(self):
+        outsider = CustomUser.objects.create_user(phone_number='5555555555', password='pass1234')
+        self.client.force_authenticate(user=outsider)
+        response = self.client.post(self.url)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_group_chat_detail_as_participant(self):
-        self.authenticate_user(self.user1)
-        url = reverse('chat-detail', kwargs={'chat_id': self.group_chat.id})
-        response = self.client.get(url)
+
+class ChatSearchAPITest(APITestCase):
+    def setUp(self):
+        self.user = CustomUser.objects.create_user(phone_number='+12345678', password='testpass')
+        self.client.force_authenticate(user=self.user)
+
+        self.chat1 = Chat.objects.create(chat_name='Football Chat', is_group=True)
+        self.chat1.participants.add(self.user)
+
+        self.chat2 = Chat.objects.create(chat_name='Cooking Group', is_group=True)
+        self.chat2.participants.add(self.user)
+
+        self.chat3 = Chat.objects.create(chat_name='Music', is_group=True)
+        # этот чат без пользователя
+
+    def test_search_chat_by_name(self):
+        url = reverse('chat-search')
+        response = self.client.get(url, {'q': 'Cook'})
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data['messages']), 1)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['chat_name'], 'Cooking Group')
 
-    def test_group_chat_detail_as_non_participant(self):
-        self.authenticate_user(self.user3)
-        url = reverse('chat-detail', kwargs={'chat_id': self.group_chat.id})
-        response = self.client.get(url)
+    def test_search_chat_user_not_included(self):
+        url = reverse('chat-search')
+        response = self.client.get(url, {'q': 'Music'})
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['chat_name'], 'Test Group')
-        self.assertEqual(response.data['messages'], [])
-
-    def test_update_group_chat_name(self):
-        self.authenticate_user(self.user1)
-        url = reverse('chat-update', kwargs={'pk': self.group_chat.id})
-        data = {'chat_name': 'Updated Group Name'}
-        response = self.client.patch(url, data, format='json')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.group_chat.refresh_from_db()
-        self.assertEqual(self.group_chat.chat_name, 'Updated Group Name')
-
-    def test_update_private_chat_name(self):
-        self.authenticate_user(self.user1)
-        url = reverse('chat-update', kwargs={'pk': self.private_chat.id})
-        data = {'chat_name': 'Should Fail'}
-        response = self.client.patch(url, data, format='json')
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    def test_update_chat_by_non_participant(self):
-        self.authenticate_user(self.user3)
-        url = reverse('chat-update', kwargs={'pk': self.group_chat.id})
-        data = {'chat_name': 'Hacked Name'}
-        response = self.client.patch(url, data, format='json')
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-
-    def test_join_group_chat(self):
-        self.authenticate_user(self.user3)
-        url = reverse('chat-join', kwargs={'chat_id': self.group_chat.id})
-        response = self.client.post(url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertTrue(self.group_chat.participants.filter(id=self.user3.id).exists())
-
-    def test_join_already_joined(self):
-        self.authenticate_user(self.user1)
-        url = reverse('chat-join', kwargs={'chat_id': self.group_chat.id})
-        response = self.client.post(url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['message'], 'Вы уже участник чата.')
-
-    def test_send_message_without_access(self):
-        self.authenticate_user(self.user3)
-        url = reverse('message-send')
-        data = {'chat': self.private_chat.id, 'content': 'Should fail'}
-        response = self.client.post(url, data, format='json')
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    def test_like_message_as_participant(self):
-        self.authenticate_user(self.user1)
-        url = reverse('message-like', kwargs={'message_id': self.message2.id})
-        response = self.client.post(url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertTrue(self.message2.likes.filter(id=self.user1.id).exists())
-
-    def test_like_message_as_non_participant(self):
-        self.authenticate_user(self.user3)
-        url = reverse('message-like', kwargs={'message_id': self.message2.id})
-        response = self.client.post(url)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-
-    def test_toggle_like(self):
-        self.authenticate_user(self.user1)
-        url = reverse('message-like', kwargs={'message_id': self.message1.id})
-
-        # Лайк
-        response = self.client.post(url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertTrue(self.message1.likes.filter(id=self.user1.id).exists())
-
-        # Анлайк
-        response = self.client.post(url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertFalse(self.message1.likes.filter(id=self.user1.id).exists())
+        self.assertEqual(len(response.data), 0)

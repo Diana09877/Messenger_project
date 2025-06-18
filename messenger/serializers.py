@@ -4,6 +4,7 @@ from .models import Message, Chat
 from users.serializers import UserSerializer
 from django.utils.timesince import timesince
 
+
 class MessageSerializer(serializers.ModelSerializer):
     """Сериализатор для отображения сообщений"""
     author = UserSerializer(read_only=True)
@@ -79,7 +80,8 @@ class ChatListSerializer(serializers.ModelSerializer):
             'chat_name',
             'avatar',
             'last_message',
-            'last_time'
+            'last_time',
+
         ]
 
     def get_other_user(self, obj):
@@ -120,13 +122,16 @@ class ChatDetailSerializer(serializers.ModelSerializer):
     """Полная информация о чате"""
     chat_name = serializers.SerializerMethodField()
     messages = serializers.SerializerMethodField()
+    participants = serializers.SerializerMethodField()
 
     class Meta:
         model = Chat
         fields = [
             'id',
             'chat_name',
-            'messages'
+            'messages',
+            'is_group',
+            'participants',
         ]
 
     def get_chat_name(self, chat):
@@ -139,6 +144,10 @@ class ChatDetailSerializer(serializers.ModelSerializer):
     def get_messages(self, chat):
         messages = chat.messages.order_by('created_at')
         return MessageSerializer(messages, many=True, context=self.context).data
+
+    def get_participants(self, chat):
+        return [user.phone_number for user in chat.participants.all()]
+
 
 
 class ChatCreateSerializer(serializers.ModelSerializer):
@@ -159,27 +168,36 @@ class ChatCreateSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'participants',
-            'chat_name'
+            'chat_name',
+            'is_group'
+
         ]
+
     def validate_participants(self, phone_numbers):
+        """Проверка: все ли номера существуют в базе"""
         unique_numbers = list(set(phone_numbers))
         users = CustomUser.objects.filter(phone_number__in=unique_numbers)
 
         if users.count() != len(unique_numbers):
             raise serializers.ValidationError("Некоторые номера не найдены")
 
-        return list(users)
+        return unique_numbers
 
     def create(self, validated_data):
         request_user = self.context['request'].user
-        users = list(validated_data['participants'])
 
+        phone_numbers = validated_data['participants']
+
+        users = list(CustomUser.objects.filter(phone_number__in=phone_numbers))
+
+        # добавляем себя, если ещё не добавили
         if request_user not in users:
             users.append(request_user)
 
         is_group = len(users) > 2
         chat_name = validated_data.get('chat_name', '')
 
+        # проверка на существование такого же 1-на-1 чата
         user_ids = set(user.id for user in users)
         if not is_group:
             for chat in Chat.objects.filter(is_group=False):

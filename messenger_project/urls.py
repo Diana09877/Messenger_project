@@ -7,8 +7,8 @@ from users.views import (
     UserProfileAPIView
 )
 from messenger.views import (
-    MessageCreateAPIView, MessageLikeAPIView, ChatDetailAPIView,
-    ChatListAPIView, ChatCreateAPIView, ChatUpdateAPIView, ChatJoinAPIView
+    MessageCreateAPIView, MessageLikeAPIView, ChatDetailAPIView,ChatListAPIView,
+    ChatCreateAPIView, ChatUpdateAPIView, ChatJoinAPIView, ChatSearchAPIView
 )
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
@@ -40,6 +40,7 @@ urlpatterns = [
     path('chats/<int:chat_id>/join/', ChatJoinAPIView.as_view(), name='chat-join'),
     path('api/v1/messages/send/', MessageCreateAPIView.as_view(), name='message-send'),
     path('api/v1/messages/<int:message_id>/like/', MessageLikeAPIView.as_view(), name='message-like'),
+    path('api/v1/chat-search/', ChatSearchAPIView.as_view(), name='chat-search'),
 ]
 
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

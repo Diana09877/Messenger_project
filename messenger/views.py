@@ -5,9 +5,13 @@ from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from .models import Chat, Message
 from .serializers import (
-    ChatCreateSerializer, ChatListSerializer, MessageCreateSerializer,
-    ChatDetailSerializer, ChatUpdateSerializer
+    ChatCreateSerializer,
+    ChatListSerializer,
+    MessageCreateSerializer,
+    ChatDetailSerializer,
+    ChatUpdateSerializer
 )
+
 
 class MessageCreateAPIView(APIView):
     """Создание сообщения и добавление его в чат"""
@@ -31,12 +35,8 @@ class MessageLikeAPIView(APIView):
     def post(self, request, message_id):
         user = request.user
         message = get_object_or_404(Message, id=message_id)
-
-        # Проверяем, есть ли у пользователя доступ к чату
         if user not in message.chat.participants.all():
             return Response(status=403)
-
-        # Переключаем лайк
         liked = message.likes.filter(id=user.id).exists()
         if liked:
             message.likes.remove(user)
@@ -76,7 +76,7 @@ class ChatDetailAPIView(APIView):
                     'chat_name': chat.chat_name,
                     'is_group': chat.is_group,
                     'participants': participant_phones,
-                    'messages': []  # сообщения не показываем, так как не участник
+                    'messages': []  #
                 }, status=200)
             else:
                 # Если это личный чат и пользователь не участник — запрещаем доступ
@@ -140,3 +140,18 @@ class ChatJoinAPIView(APIView):
 
         chat.participants.add(request.user)
         return Response({'message': 'Вы вступили в группу.'}, status=200)
+
+
+class ChatSearchAPIView(generics.ListAPIView):
+    """Поиск чата"""
+    serializer_class = ChatListSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        query = self.request.query_params.get('q', '')
+
+        return Chat.objects.filter(
+            participants=user,
+            chat_name__icontains=query
+        )
