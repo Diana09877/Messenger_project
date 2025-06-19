@@ -5,6 +5,38 @@ from messenger.models import Chat, Message
 from users.models import CustomUser
 
 
+class ChatCreateTests(APITestCase):
+    def setUp(self):
+        self.user1 = CustomUser.objects.create_user(phone_number='1111111111', password='password')
+        self.user2 = CustomUser.objects.create_user(phone_number='2222222222', password='password')
+        self.user3 = CustomUser.objects.create_user(phone_number='3333333333', password='password')
+        self.create_url = reverse('chat-create')
+        self.client.force_authenticate(user=self.user1)
+
+    def test_group_chat_name_must_be_unique(self):
+        """Проверка: название группового чата должно быть уникальным"""
+
+        # Создаём первый групповой чат
+        data1 = {
+            "participants": [self.user2.phone_number, self.user3.phone_number],
+            "chat_name": "MyUniqueGroup",
+            "is_group": True
+        }
+        response1 = self.client.post(self.create_url, data1)
+        self.assertEqual(response1.status_code, status.HTTP_201_CREATED)
+
+        # Пытаемся создать второй чат с тем же именем
+        data2 = {
+            "participants": [self.user2.phone_number, self.user3.phone_number],
+            "chat_name": "MyUniqueGroup",  # Такое же имя
+            "is_group": True
+        }
+        response2 = self.client.post(self.create_url, data2)
+        self.assertEqual(response2.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('chat_name', response2.data)
+
+
+
 class ChatDetailAPITest(APITestCase):
     def setUp(self):
         self.user1 = CustomUser.objects.create_user(phone_number="+12345678", password="pass1234")
@@ -61,7 +93,7 @@ class ChatListAPITests(APITestCase):
 
         self.client.force_authenticate(user=self.user1)
 
-    def test_chat_list_returns_only_user_chats(self):
+    def test_chat_list_returns_user_chats(self):
         url = reverse('chat-list')
         response = self.client.get(url)
 
@@ -177,23 +209,23 @@ class ChatSearchAPITest(APITestCase):
         self.chat1 = Chat.objects.create(chat_name='Football Chat', is_group=True)
         self.chat1.participants.add(self.user)
 
-        self.chat2 = Chat.objects.create(chat_name='Cooking Group', is_group=True)
+        self.chat2 = Chat.objects.create(chat_name='FAMILY', is_group=True)
         self.chat2.participants.add(self.user)
 
-        self.chat3 = Chat.objects.create(chat_name='Music', is_group=True)
-        # этот чат без пользователя
+        self.chat3 = Chat.objects.create(chat_name='Classmates', is_group=True)
+
 
     def test_search_chat_by_name(self):
         url = reverse('chat-search')
-        response = self.client.get(url, {'q': 'Cook'})
+        response = self.client.get(url, {'q': 'fam'})
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['chat_name'], 'Cooking Group')
+        self.assertEqual(response.data[0]['chat_name'], 'FAMILY')
 
     def test_search_chat_user_not_included(self):
         url = reverse('chat-search')
-        response = self.client.get(url, {'q': 'Music'})
+        response = self.client.get(url, {'q': 'Classmates'})
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 0)

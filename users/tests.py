@@ -48,11 +48,13 @@ class AuthTests(APITestCase):
         self.login_url = reverse('login')
         self.phone_number = '+1234567890'
         self.password = 'securepassword123'
+        self.first_name = 'Artur'
 
     def test_user_registration(self):
         data = {
             'phone_number': self.phone_number,
             'password': self.password,
+            'first_name': self.first_name
 
         }
         response = self.client.post(self.register_url, data)
@@ -64,7 +66,8 @@ class AuthTests(APITestCase):
 
         data = {
             'phone_number': self.phone_number,
-            'password': self.password
+            'password': self.password,
+            'first_name': self.first_name,
         }
         response = self.client.post(self.login_url, data)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
