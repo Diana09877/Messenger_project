@@ -193,17 +193,27 @@ class ChatCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         request_user = self.context['request'].user
-        phone_numbers = validated_data['participants']
+
+        if not request_user.is_authenticated:
+            raise serializers.ValidationError("Пользователь не авторизован.")
+
+        phone_numbers = validated_data.get('participants', [])
+        if not phone_numbers:
+            raise serializers.ValidationError("Невозможно создать чат без участников.")
+
         users = list(CustomUser.objects.filter(phone_number__in=phone_numbers))
 
         # Добавляем себя в чат, если не включили
         if request_user not in users:
             users.append(request_user)
 
+        if not users:
+            raise serializers.ValidationError("Невозможно создать чат без участников.")
+
         is_group = len(users) > 2
         chat_name = validated_data.get('chat_name', '')
 
-        # 🔒 Повторная проверка на уникальность имени группового чата
+        # Повторная проверка на уникальность имени группового чата
         if is_group and chat_name:
             if Chat.objects.filter(chat_name=chat_name).exists():
                 raise serializers.ValidationError({'chat_name': 'Чат с таким названием уже существует.'})
@@ -222,77 +232,6 @@ class ChatCreateSerializer(serializers.ModelSerializer):
         )
         chat.participants.set(users)
         return chat
-
-
-# class ChatCreateSerializer(serializers.ModelSerializer):
-#     """Создание чата между пользователями"""
-#
-#     participants = serializers.ListField(
-#         child=serializers.CharField(),
-#         write_only=True
-#     )
-#
-#     chat_name = serializers.CharField(
-#         required=False,
-#         allow_blank=True
-#     )
-#
-#     class Meta:
-#         model = Chat
-#         fields = [
-#             'id',
-#             'participants',
-#             'chat_name',
-#             'is_group'
-#         ]
-#
-#     def validate_participants(self, phone_numbers):
-#         """Проверка: все ли номера существуют в базе"""
-#         unique_numbers = list(set(phone_numbers))
-#         users = CustomUser.objects.filter(phone_number__in=unique_numbers)
-#
-#         if users.count() != len(unique_numbers):
-#             raise serializers.ValidationError("Некоторые номера не найдены")
-#
-#         return unique_numbers
-#
-#     def validate_chat_name(self, value):
-#         """Проверка на уникальность названия для групповых чатов"""
-#         is_group = self.initial_data.get('is_group')
-#         # Преобразуем в булево, так как приходит строка
-#         is_group = str(is_group).lower() in ['true', '1', 'yes']
-#
-#         if is_group and value:
-#             if Chat.objects.filter(chat_name=value).exists():
-#                 raise serializers.ValidationError("Чат с таким названием уже существует.")
-#         return value
-#
-#     def create(self, validated_data):
-#         request_user = self.context['request'].user
-#         phone_numbers = validated_data['participants']
-#         users = list(CustomUser.objects.filter(phone_number__in=phone_numbers))
-#
-#         # добавляем себя, если ещё не добавили
-#         if request_user not in users:
-#             users.append(request_user)
-#
-#         is_group = len(users) > 2
-#         chat_name = validated_data.get('chat_name', '')
-#
-#         # проверка на существование такого же 1-на-1 чата
-#         user_ids = set(user.id for user in users)
-#         if not is_group:
-#             for chat in Chat.objects.filter(is_group=False):
-#                 participant_ids = set(chat.participants.values_list('id', flat=True))
-#                 if participant_ids == user_ids:
-#                     return chat
-#
-#         chat = Chat.objects.create(
-#             is_group=is_group,
-#             chat_name=chat_name if is_group else ''
-#         )
-#         chat.participants.set(users)
-#         return chat
 
 
 class ChatUpdateSerializer(serializers.ModelSerializer):
