@@ -13,7 +13,6 @@ class Chat(models.Model):
     )
     chat_name = models.CharField(
         max_length=255,
-        unique=True,
         blank=True,
         null=True,
         verbose_name='Название чата'

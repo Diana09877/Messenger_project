@@ -16,7 +16,7 @@ class ChatCreateTests(APITestCase):
     def test_group_chat_name_must_be_unique(self):
         """Проверка: название группового чата должно быть уникальным"""
 
-        # Создаём первый групповой чат
+        # Создаем первый групповой чат
         data1 = {
             "participants": [self.user2.phone_number, self.user3.phone_number],
             "chat_name": "MyUniqueGroup",
@@ -25,10 +25,10 @@ class ChatCreateTests(APITestCase):
         response1 = self.client.post(self.create_url, data1)
         self.assertEqual(response1.status_code, status.HTTP_201_CREATED)
 
-        # Пытаемся создать второй чат с тем же именем
+        #  Создаем второй чат с тем же именем
         data2 = {
             "participants": [self.user2.phone_number, self.user3.phone_number],
-            "chat_name": "MyUniqueGroup",  # Такое же имя
+            "chat_name": "MyUniqueGroup",
             "is_group": True
         }
         response2 = self.client.post(self.create_url, data2)

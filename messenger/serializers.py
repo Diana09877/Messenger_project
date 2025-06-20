@@ -211,12 +211,19 @@ class ChatCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Невозможно создать чат без участников.")
 
         is_group = len(users) > 2
-        chat_name = validated_data.get('chat_name', '')
+        chat_name = validated_data.get('chat_name')  # TODO: прочитай чем отличается get метод для словаря и чем отличается от квадратных скобок!
+
+        if is_group is True and chat_name is None:
+            # если создается группа и если фронтенд не передал название чата
+            raise serializers.ValidationError(
+                {'chat_name': "При создании чата из больше чем два пользователя нужно ввести название чата"},
+            )
 
         # Повторная проверка на уникальность имени группового чата
-        if is_group and chat_name:
-            if Chat.objects.filter(chat_name=chat_name).exists():
-                raise serializers.ValidationError({'chat_name': 'Чат с таким названием уже существует.'})
+        # TODO: могут существовать разные чаты с одинаковым названием, поэтому это валидация нам не нужна
+        # if is_group and chat_name:
+        #     if Chat.objects.filter(chat_name=chat_name).exists():
+        #         raise serializers.ValidationError({'chat_name': 'Чат с таким названием уже существует.'})
 
         # Проверка на существующий личный чат
         if not is_group:
@@ -228,7 +235,7 @@ class ChatCreateSerializer(serializers.ModelSerializer):
 
         chat = Chat.objects.create(
             is_group=is_group,
-            chat_name=chat_name if is_group else ''
+            chat_name=chat_name,
         )
         chat.participants.set(users)
         return chat

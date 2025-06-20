@@ -45,7 +45,7 @@ class MessageLikeAPIView(APIView):
         if user not in message.chat.participants.all():
             return Response(status=403)
 
-        # Если лайк уже был — убираем, иначе добавляем
+        # Если лайк уже был  убираем, иначе добавляем
         if message.likes.filter(id=user.id).exists():
             message.likes.remove(user)
             liked = False
@@ -115,7 +115,7 @@ class ChatRetrieveUpdateAPIView(generics.RetrieveUpdateAPIView):
             # Если это личный чат — запрет
             return Response({'detail': 'Forbidden'}, status=403)
 
-        # Если пользователь участник — покажем полную инфу
+        # Если пользователь участник  покажем полную инфу
         data = self.get_serializer(chat).data
         data['access'] = True  # Есть доступ
         return Response(data, status=200)
