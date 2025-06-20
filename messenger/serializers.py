@@ -148,6 +148,7 @@ class ChatDetailSerializer(serializers.ModelSerializer):
     def get_participants(self, chat):
         return [user.phone_number for user in chat.participants.all()]
 
+
 class ChatCreateSerializer(serializers.ModelSerializer):
     """Создание чата между пользователями"""
 

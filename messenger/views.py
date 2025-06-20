@@ -1,9 +1,11 @@
 from rest_framework import generics
+from rest_framework.generics import CreateAPIView
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from .models import Chat, Message
+from drf_spectacular.utils import extend_schema
 from .serializers import (
     ChatCreateSerializer,
     ChatListSerializer,
@@ -13,9 +15,14 @@ from .serializers import (
 )
 
 
-class MessageCreateAPIView(APIView):
+class MessageCreateAPIView(CreateAPIView):
     """Создание сообщения и добавление его в чат"""
     permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        request=MessageCreateSerializer,
+        responses={201: MessageCreateSerializer, 400: None}
+    )
 
     def post(self, request):
         serializer = MessageCreateSerializer(
@@ -58,33 +65,35 @@ class ChatListAPIView(generics.ListAPIView):
             .order_by('-created_at')
         )
 
-
-class ChatDetailAPIView(APIView):
-    """Получение информации о чате (только если пользователь участник)"""
+class ChatDetailAPIView(generics.RetrieveAPIView):
+    """Получение информации о чате"""
     permission_classes = [IsAuthenticated]
+    serializer_class = ChatDetailSerializer
+    lookup_url_kwarg = 'chat_id'
 
-    def get(self, request, chat_id):
-        chat = get_object_or_404(Chat, id=chat_id)
+    def get_queryset(self):
+        return Chat.objects.all()
+
+    def retrieve(self, request, *args, **kwargs):
+        chat = self.get_object()
 
         if request.user not in chat.participants.all():
             if chat.is_group:
-                participants = chat.participants.all()
-                participant_phones = [participant.phone_number for participant in participants]
-
+                phones = [p.phone_number for p in chat.participants.all()]
                 return Response({
                     'chat_id': chat.id,
                     'chat_name': chat.chat_name,
                     'is_group': chat.is_group,
-                    'participants': participant_phones,
-                    'messages': []  #
-                }, status=200)
-            else:
-                # Если это личный чат и пользователь не участник — запрещаем доступ
-                return Response({'detail': 'Доступ запрещён'}, status=403)
+                    'participants': phones,
+                    'messages': [],
+                    'access': False,
+                })
+            # Если это личный чат и пользователь не участник — запрещаем доступ
+            return Response({'detail': 'Forbidden'}, status=403)
 
-        # Если пользователь участник чата — сериализуем и отдаём полную информацию
-        serializer = ChatDetailSerializer(chat, context={'request': request})
-        return Response(serializer.data, status=200)
+        data = self.get_serializer(chat).data
+        data['access'] = True
+        return Response(data, status=200)
 
 
 class ChatCreateAPIView(APIView):
