@@ -36,13 +36,13 @@ urlpatterns = [
     path('api/v1/profile/', UserProfileAPIView.as_view(), name='user-profile'),
     path('api/v1/chat/create/', ChatCreateAPIView.as_view(), name='chat-create'),
     path('api/v1/chat/<int:pk>/update/', ChatUpdateAPIView.as_view(), name='chat-update'),
-    path('api/v1/user/search/', UserSearchAPIView.as_view(), name='user-search'),
+    path('api/v1/user-search/', UserSearchAPIView.as_view(), name='user-search'),
     path('api/v1/chat/<int:chat_id>/', ChatDetailAPIView.as_view(), name='chat-detail'),
     path('api/v1/chats/', ChatListAPIView.as_view(), name='chat-list'),
     path('chat/<int:chat_id>/join/', ChatJoinAPIView.as_view(), name='chat-join'),
     path('api/v1/messages/send/', MessageCreateAPIView.as_view(), name='message-send'),
     path('api/v1/messages/<int:message_id>/like/', MessageLikeAPIView.as_view(), name='message-like'),
-    path('api/v1/chat/search/', ChatSearchAPIView.as_view(), name='chat-search'),
+    path('api/v1/chat-search/', ChatSearchAPIView.as_view(), name='chat-search'),
 ]
 
 if settings.DEBUG:
