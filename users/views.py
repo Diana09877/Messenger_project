@@ -6,6 +6,8 @@ from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.authtoken.models import Token
 from .models import CustomUser
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
+
 from .serializers import (
     UserRegistrationSerializer,
     UserLoginSerializer,
@@ -13,38 +15,36 @@ from .serializers import (
     UserSerializer
 )
 
-class UserProfileAPIView(APIView):
+
+@extend_schema(
+    summary="Получить или обновить профиль",
+    description="Позволяет получить, обновить PUT или частично обновить PATCH профиль текущего пользователя",
+    responses={200: UserSerializer}
+)
+class UserProfileAPIView(generics.RetrieveUpdateAPIView):
     """Просмотр и редактирование профиля пользователя"""
     permission_classes = [IsAuthenticated]
+    serializer_class = UserProfileUpdateSerializer
 
-    def get(self, request):
-        serializer = UserSerializer(request.user)
-        return Response(serializer.data, status=200)
+    def get_object(self):
+        return self.request.user
 
-    def put(self, request):
-        serializer = UserProfileUpdateSerializer(
-            request.user,
-            data=request.data,
-            context={'request': request}
-        )
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=200)
-        return Response(serializer.errors, status=400)
-
-    def patch(self, request):
-        serializer = UserProfileUpdateSerializer(
-            request.user,
-            data=request.data,
-            partial=True,
-            context={'request': request}
-        )
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=200)
-        return Response(serializer.errors, status=400)
+    def get_serializer_class(self):
+        # Если GET  вернуть полный профиль, иначе для обновления
+        if self.request.method == 'GET':
+            return UserSerializer
+        return UserProfileUpdateSerializer
 
 
+@extend_schema(
+    summary="Регистрация нового пользователя",
+    description="Создание пользователя и получение токена доступа",
+    request=UserRegistrationSerializer,
+    responses={
+        201: OpenApiResponse(description="Успешная регистрация с токеном"),
+        400: OpenApiResponse(description="Ошибки валидации")
+    }
+)
 class UserRegistrationAPIView(APIView):
     """Регистрация нового пользователя"""
     permission_classes = [AllowAny]
@@ -64,6 +64,15 @@ class UserRegistrationAPIView(APIView):
         return Response(serializer.errors, status=400)
 
 
+@extend_schema(
+    summary="Вход пользователя",
+    description="Авторизация по номеру телефона и паролю. Возвращает токен",
+    request=UserLoginSerializer,
+    responses={
+        200: OpenApiResponse(description="Успешный вход и получение токена"),
+        400: OpenApiResponse(description="Неверные данные или ошибки валидации")
+    }
+)
 class UserLoginAPIView(APIView):
     """Вход пользователя"""
     permission_classes = [AllowAny]
@@ -88,6 +97,20 @@ class UserLoginAPIView(APIView):
         return Response({'token': token.key}, status=200)
 
 
+@extend_schema(
+    summary="Поиск пользователей",
+    description="Поиск пользователей по номеру телефона или имени. Исключает текущего пользователя",
+    parameters=[
+        OpenApiParameter(
+            name='search',
+            description='Поисковый запрос (номер телефона или имя)',
+            required=False,
+            type=str,
+            location=OpenApiParameter.QUERY
+        )
+    ],
+    responses={200: UserSerializer(many=True)}
+)
 class UserSearchAPIView(generics.ListAPIView):
     """Поиск пользователей по номеру телефона"""
     serializer_class = UserSerializer

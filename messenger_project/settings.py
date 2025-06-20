@@ -117,6 +117,11 @@ AUTH_PASSWORD_VALIDATORS = [
 
 AUTH_USER_MODEL = 'users.CustomUser'
 
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Chat API',
+    'DESCRIPTION': 'Документация для чатов, сообщений и лайков',
+    'VERSION': '1.0.0',
+}
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -127,12 +132,6 @@ REST_FRAMEWORK = {
 
 }
 
-SPECTACULAR_SETTINGS = {
-    'TITLE': 'MessengerProject API',
-    'DESCRIPTION': 'API для обмена сообщениями и управления чатами — регистрация, авторизация, создание личных и групповых чатов, отправка сообщений и лайков. Быстрый и надежный мессенджер для общения.',
-    'VERSION': '1.0.0',
-    'SERVE_INCLUDE_SCHEMA': False,
-}
 
 # Internationalization
 # https://docs.djangoproject.com/en/4.2/topics/i18n/

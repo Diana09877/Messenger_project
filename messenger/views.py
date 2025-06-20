@@ -5,7 +5,8 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
 from .models import Chat, Message
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
+
 from .serializers import (
     ChatCreateSerializer,
     ChatListSerializer,
@@ -14,27 +15,24 @@ from .serializers import (
     ChatUpdateSerializer
 )
 
-
+@extend_schema(
+    summary="Создать сообщение",
+    description="Создаёт новое сообщение в чате",
+    request=MessageCreateSerializer,
+    responses={201: MessageCreateSerializer}
+)
 class MessageCreateAPIView(CreateAPIView):
     """Создание сообщения и добавление его в чат"""
     permission_classes = [IsAuthenticated]
-
-    @extend_schema(
-        request=MessageCreateSerializer,
-        responses={201: MessageCreateSerializer, 400: None}
-    )
-
-    def post(self, request):
-        serializer = MessageCreateSerializer(
-            data=request.data,
-            context={'request': request}
-        )
-        if serializer.is_valid():
-            message = serializer.save()
-            return Response(MessageCreateSerializer(message).data, status=201)
-        return Response(serializer.errors, status=400)
+    serializer_class = MessageCreateSerializer
 
 
+@extend_schema(
+    summary="Лайк поставлен или убран",
+    description="Добавляет или убирает лайк к сообщению. Только участники чата",
+    responses={200: OpenApiResponse(description="Лайк поставлен/убран")},
+    parameters=[OpenApiParameter(name='message_id', location=OpenApiParameter.PATH, required=True, type=int)]
+)
 class MessageLikeAPIView(APIView):
     """Поставить или снять лайк с сообщения"""
     permission_classes = [IsAuthenticated]
@@ -42,117 +40,118 @@ class MessageLikeAPIView(APIView):
     def post(self, request, message_id):
         user = request.user
         message = get_object_or_404(Message, id=message_id)
+
+        # Проверяем, есть ли пользователь в этом чате
         if user not in message.chat.participants.all():
             return Response(status=403)
-        liked = message.likes.filter(id=user.id).exists()
-        if liked:
+
+        # Если лайк уже был — убираем, иначе добавляем
+        if message.likes.filter(id=user.id).exists():
             message.likes.remove(user)
+            liked = False
         else:
             message.likes.add(user)
+            liked = True
+        return Response({'liked': liked}, status=200)
 
-        return Response({'liked': not liked}, status=200)
 
-
-class ChatListAPIView(generics.ListAPIView):
-    """Список чатов пользователя с последним сообщением"""
+@extend_schema(
+    summary="Список чатов и создание",
+    description="Показывает чаты пользователя или создаёт новый чат",
+    responses={200: ChatListSerializer, 201: ChatCreateSerializer}
+)
+class ChatListCreateAPIView(generics.ListCreateAPIView):
+    """Показать список чатов или создать новый чат"""
     permission_classes = [IsAuthenticated]
-    serializer_class = ChatListSerializer
 
     def get_queryset(self):
-        return (
-            Chat.objects
-            .filter(participants=self.request.user)
-            .order_by('-created_at')
-        )
+        # Вернуть все чаты, где участвует пользователь
+        return Chat.objects.filter(participants=self.request.user).order_by('-created_at')
 
-class ChatDetailAPIView(generics.RetrieveAPIView):
-    """Получение информации о чате"""
+    def get_serializer_class(self):
+        # Для создания чата один сериализатор, для списка другой
+        if self.request.method == 'POST':
+            return ChatCreateSerializer
+        return ChatListSerializer
+
+
+@extend_schema(
+    summary="Получить или обновить чат",
+    description="Получает детали чата или обновляет его",
+    responses={
+        200: ChatDetailSerializer,
+        403: OpenApiResponse(description="Нет доступа")
+    },
+    parameters=[OpenApiParameter(name='pk', location=OpenApiParameter.PATH, required=True, type=int)]
+)
+class ChatRetrieveUpdateAPIView(generics.RetrieveUpdateAPIView):
+    """Получить или обновить чат"""
     permission_classes = [IsAuthenticated]
-    serializer_class = ChatDetailSerializer
-    lookup_url_kwarg = 'chat_id'
+    queryset = Chat.objects.all()
+    lookup_field = 'pk'  # По какому полю искать чат
 
-    def get_queryset(self):
-        return Chat.objects.all()
+    def get_serializer_class(self):
+        # Если обновляем  используем один сериализатор,
+        # если просто получаем другой
+        if self.request.method in ['PATCH', 'PUT']:
+            return ChatUpdateSerializer
+        return ChatDetailSerializer
 
     def retrieve(self, request, *args, **kwargs):
         chat = self.get_object()
 
+        # Если пользователь не участвует в чате
         if request.user not in chat.participants.all():
             if chat.is_group:
-                phones = [p.phone_number for p in chat.participants.all()]
+                # Если это группа — покажем базовую инфу без сообщений
                 return Response({
                     'chat_id': chat.id,
                     'chat_name': chat.chat_name,
                     'is_group': chat.is_group,
-                    'participants': phones,
+                    'participants': [p.phone_number for p in chat.participants.all()],
                     'messages': [],
-                    'access': False,
+                    'access': False,  # Пользователь не в чате
                 })
-            # Если это личный чат и пользователь не участник — запрещаем доступ
+            # Если это личный чат — запрет
             return Response({'detail': 'Forbidden'}, status=403)
 
+        # Если пользователь участник — покажем полную инфу
         data = self.get_serializer(chat).data
-        data['access'] = True
+        data['access'] = True  # Есть доступ
         return Response(data, status=200)
 
 
-class ChatCreateAPIView(APIView):
-    """Создание нового чата"""
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        serializer = ChatCreateSerializer(
-            data=request.data,
-            context={'request': request}
-        )
-
-        if serializer.is_valid():
-            chat = serializer.save()
-            return Response(ChatCreateSerializer(chat).data, status=201)
-        return Response(serializer.errors, status=400)
-
-
-class ChatUpdateAPIView(APIView):
-    """Обновить название группового чата"""
-    permission_classes = [IsAuthenticated]
-
-    def patch(self, request, pk):
-        chat = get_object_or_404(Chat, pk=pk)
-
-        if request.user not in chat.participants.all():
-            return Response({'error': 'Вы не участник этого чата.'}, status=403)
-
-        # Проверка: только для групп
-        if not chat.is_group:
-            return Response({'error': 'Название можно менять только у групповых чатов.'}, status=400)
-
-        serializer = ChatUpdateSerializer(chat, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=200)
-
-        return Response(serializer.errors, status=400)
-
-
+@extend_schema(
+    summary="Вступить в групповой чат",
+    description="Позволяет пользователю присоединиться к группе по ID",
+    responses={
+        200: OpenApiResponse(description="Успешно вступили"),
+        400: OpenApiResponse(description="Не групповой чат"),
+    },
+    parameters=[OpenApiParameter(name='chat_id', location=OpenApiParameter.PATH, required=True, type=int)]
+)
 class ChatJoinAPIView(APIView):
-    """Вступить в чат по ID (только для групп)"""
+    """Вступить в групповой чат по ID """
     permission_classes = [IsAuthenticated]
 
     def post(self, request, chat_id):
         chat = get_object_or_404(Chat, id=chat_id)
-
         if not chat.is_group:
             return Response({'error': 'Это не групповой чат.'}, status=400)
-
         if request.user in chat.participants.all():
             return Response({'message': 'Вы уже участник чата.'}, status=200)
-
         chat.participants.add(request.user)
         return Response({'message': 'Вы вступили в группу.'}, status=200)
 
 
+@extend_schema(
+    summary="Поиск чатов",
+    description="Ищет чаты по названию, где участвует пользователь",
+    parameters=[OpenApiParameter(name='q', location='query', required=False, type=str)],
+    responses={200: ChatListSerializer(many=True)}
+)
 class ChatSearchAPIView(generics.ListAPIView):
-    """Поиск чата"""
+    """Поиск чатов по названию"""
     serializer_class = ChatListSerializer
     permission_classes = [IsAuthenticated]
 
@@ -162,5 +161,5 @@ class ChatSearchAPIView(generics.ListAPIView):
 
         return Chat.objects.filter(
             participants=user,
-            chat_name__icontains=query
+            chat_name__icontains=query # Поиск без учёта регистра
         )
