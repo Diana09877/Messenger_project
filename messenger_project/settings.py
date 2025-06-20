@@ -129,11 +129,10 @@ REST_FRAMEWORK = {
 
 SPECTACULAR_SETTINGS = {
     'TITLE': 'MessengerProject API',
-    'DESCRIPTION': 'Your project description',
+    'DESCRIPTION': 'API для обмена сообщениями и управления чатами — регистрация, авторизация, создание личных и групповых чатов, отправка сообщений и лайков. Быстрый и надежный мессенджер для общения.',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
 }
-
 
 # Internationalization
 # https://docs.djangoproject.com/en/4.2/topics/i18n/
