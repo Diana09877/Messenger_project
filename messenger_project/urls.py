@@ -1,15 +1,15 @@
 from django.contrib import admin
 from django.conf import settings
 from django.conf.urls.static import static
-from django.urls import path, include
+from django.urls import path
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 from users.views import (
     UserRegistrationAPIView, UserLoginAPIView, UserSearchAPIView,
     UserProfileAPIView
 )
 from messenger.views import (
-    MessageCreateAPIView, MessageLikeAPIView, ChatJoinAPIView, ChatSearchAPIView, ChatListCreateAPIView,
-    ChatRetrieveUpdateAPIView
+    MessageCreateAPIView, MessageLikeAPIView, ChatSearchAPIView, ChatListCreateAPIView,
+    ChatRetrieveUpdateAPIView, ChatDeleteAPIView, MessageDeleteAPIView
 )
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
@@ -43,12 +43,15 @@ urlpatterns = [
     # Чаты
     path('api/v1/chats/', ChatListCreateAPIView.as_view(), name='chat-list-create'),  # GET и POST
     path('api/v1/chats/<int:pk>/', ChatRetrieveUpdateAPIView.as_view(), name='chat-detail-update'),  # GET, PUT/PATCH
-    path('api/v1/chats/<int:chat_id>/join/', ChatJoinAPIView.as_view(), name='chat-join'),
     path('api/v1/chats/search/', ChatSearchAPIView.as_view(), name='chat-search'),
+    path('api/v1/chats/<int:chat_id>/delete/', ChatDeleteAPIView.as_view(), name='chat-delete'),
+
+
 
     # Сообщения
     path('api/v1/messages/', MessageCreateAPIView.as_view(), name='message-send'),  # POST
     path('api/v1/messages/<int:message_id>/like/', MessageLikeAPIView.as_view(), name='message-like'),
+    path('api/v1/messages/<int:message_id>/delete/', MessageDeleteAPIView.as_view(), name='message-delete'),
 
 
 ]

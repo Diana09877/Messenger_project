@@ -111,6 +111,8 @@ class UserLoginAPIView(APIView):
     ],
     responses={200: UserSerializer(many=True)}
 )
+
+
 class UserSearchAPIView(generics.ListAPIView):
     """Поиск пользователей по номеру телефона"""
     serializer_class = UserSerializer

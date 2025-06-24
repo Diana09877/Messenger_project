@@ -29,6 +29,10 @@ class Chat(models.Model):
         auto_now=True,
         verbose_name='Дата последнего обновления'
     )
+    deleted_for = models.ManyToManyField(CustomUser, related_name='hidden_chats', blank=True)
+
+    def is_visible_to(self, user):
+        return user not in self.deleted_for.all()
 
     class Meta:
         verbose_name = 'Чат'
@@ -69,6 +73,11 @@ class Message(models.Model):
         auto_now_add=True,
         verbose_name='Дата отправки'
     )
+    is_deleted = models.BooleanField(default=False)
+    deleted_for = models.ManyToManyField(CustomUser, related_name='hidden_messages', blank=True)
+
+    def is_visible_to(self, user):
+        return user not in self.deleted_for.all() and not self.is_deleted
 
     class Meta:
         verbose_name = 'Сообщение'

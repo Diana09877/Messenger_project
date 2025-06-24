@@ -246,3 +246,19 @@ class ChatUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Chat
         fields = ['chat_name']
+
+
+class MessageDeleteSerializer(serializers.Serializer):
+    type = serializers.ChoiceField(
+        choices=[('self', 'Удалить у себя'), ('all', 'Удалить у всех')],
+        default='self',
+        help_text="Выберите: 'self' — удалить только у себя, 'all' — удалить у всех"
+    )
+
+
+class ChatDeleteSerializer(serializers.Serializer):
+    type = serializers.ChoiceField(
+        choices=[('self', 'Удалить у себя'), ('all', 'Удалить у всех')],
+        default='self',
+        help_text="Выберите: 'self' — выйти из чата и скрыть, 'all' — удалить полностью чат (если ты владелец)"
+    )

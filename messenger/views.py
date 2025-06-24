@@ -1,4 +1,4 @@
-from rest_framework import generics
+from rest_framework import generics, permissions
 from rest_framework.generics import CreateAPIView
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -12,7 +12,7 @@ from .serializers import (
     ChatListSerializer,
     MessageCreateSerializer,
     ChatDetailSerializer,
-    ChatUpdateSerializer
+    ChatUpdateSerializer, MessageDeleteSerializer, ChatDeleteSerializer
 )
 
 @extend_schema(
@@ -40,12 +40,8 @@ class MessageLikeAPIView(APIView):
     def post(self, request, message_id):
         user = request.user
         message = get_object_or_404(Message, id=message_id)
-
-        # Проверяем, есть ли пользователь в этом чате
         if user not in message.chat.participants.all():
             return Response(status=403)
-
-        # Если лайк уже был  убираем, иначе добавляем
         if message.likes.filter(id=user.id).exists():
             message.likes.remove(user)
             liked = False
@@ -65,11 +61,9 @@ class ChatListCreateAPIView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # Вернуть все чаты, где участвует пользователь
         return Chat.objects.filter(participants=self.request.user).order_by('-created_at')
 
     def get_serializer_class(self):
-        # Для создания чата один сериализатор, для списка другой
         if self.request.method == 'POST':
             return ChatCreateSerializer
         return ChatListSerializer
@@ -87,8 +81,6 @@ class ChatListCreateAPIView(generics.ListCreateAPIView):
 class ChatRetrieveUpdateAPIView(generics.RetrieveUpdateAPIView):
     """Получить или обновить чат"""
     permission_classes = [IsAuthenticated]
-    queryset = Chat.objects.all()
-    lookup_field = 'pk'  # По какому полю искать чат
 
     def get_serializer_class(self):
         # Если обновляем  используем один сериализатор,
@@ -97,51 +89,23 @@ class ChatRetrieveUpdateAPIView(generics.RetrieveUpdateAPIView):
             return ChatUpdateSerializer
         return ChatDetailSerializer
 
+    def get_object(self):
+        return get_object_or_404(Chat, id=self.kwargs['pk'])
+
     def retrieve(self, request, *args, **kwargs):
         chat = self.get_object()
-
-        # Если пользователь не участвует в чате
         if request.user not in chat.participants.all():
             if chat.is_group:
-                # Если это группа — покажем базовую инфу без сообщений
                 return Response({
                     'chat_id': chat.id,
                     'chat_name': chat.chat_name,
                     'is_group': chat.is_group,
                     'participants': [p.phone_number for p in chat.participants.all()],
                     'messages': [],
-                    'access': False,  # Пользователь не в чате
                 })
-            # Если это личный чат — запрет
             return Response({'detail': 'Forbidden'}, status=403)
-
-        # Если пользователь участник  покажем полную инфу
         data = self.get_serializer(chat).data
-        data['access'] = True  # Есть доступ
         return Response(data, status=200)
-
-
-@extend_schema(
-    summary="Вступить в групповой чат",
-    description="Позволяет пользователю присоединиться к группе по ID",
-    responses={
-        200: OpenApiResponse(description="Успешно вступили"),
-        400: OpenApiResponse(description="Не групповой чат"),
-    },
-    parameters=[OpenApiParameter(name='chat_id', location=OpenApiParameter.PATH, required=True, type=int)]
-)
-class ChatJoinAPIView(APIView):
-    """Вступить в групповой чат по ID """
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request, chat_id):
-        chat = get_object_or_404(Chat, id=chat_id)
-        if not chat.is_group:
-            return Response({'error': 'Это не групповой чат.'}, status=400)
-        if request.user in chat.participants.all():
-            return Response({'message': 'Вы уже участник чата.'}, status=200)
-        chat.participants.add(request.user)
-        return Response({'message': 'Вы вступили в группу.'}, status=200)
 
 
 @extend_schema(
@@ -163,3 +127,47 @@ class ChatSearchAPIView(generics.ListAPIView):
             participants=user,
             chat_name__icontains=query # Поиск без учёта регистра
         )
+
+@extend_schema(
+    summary="Удалить чат",
+    request=MessageDeleteSerializer,
+    responses={200: OpenApiResponse(description="Чат удален")}
+)
+class ChatDeleteAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, chat_id):
+        chat = get_object_or_404(Chat, id=chat_id)
+        if chat.creator != request.user:
+            return Response({"error": "Только создатель может удалить этот чат."},
+                            status=403)
+
+        if chat.is_group:
+            chat.delete()
+            return Response({"detail": "Групповой чат удалён."}, status=204)
+        else:
+            if request.user in chat.participants.all():
+                chat.participants.remove(request.user)
+                return Response(status=204)
+            else:
+                return Response({"error": "Вы не участник этого чата."}, status=400)
+
+
+@extend_schema(
+    summary="Удалить сообщение",
+    request=MessageDeleteSerializer,
+    responses={200: OpenApiResponse(description="Сообщение удалено")}
+)
+class MessageDeleteAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, message_id):
+        message = get_object_or_404(Message, id=message_id)
+
+        # Только автор сообщения или создатель чата может удалить сообщение
+        if message.author != request.user and message.chat.creator != request.user:
+            return Response({"error": "Нет прав на удаление этого сообщения."},
+                            status=403)
+
+        message.delete()
+        return Response({"detail": "Сообщение удалено."}, status=204)

@@ -10,7 +10,7 @@ class ChatCreateTests(APITestCase):
         self.user1 = CustomUser.objects.create_user(phone_number='1111111111', password='password')
         self.user2 = CustomUser.objects.create_user(phone_number='2222222222', password='password')
         self.user3 = CustomUser.objects.create_user(phone_number='3333333333', password='password')
-        self.create_url = reverse('chat-create')
+        self.create_url = reverse('chat-list-create')
         self.client.force_authenticate(user=self.user1)
 
     def test_group_chat_name_must_be_unique(self):
@@ -94,7 +94,7 @@ class ChatListAPITests(APITestCase):
         self.client.force_authenticate(user=self.user1)
 
     def test_chat_list_returns_user_chats(self):
-        url = reverse('chat-list')
+        url = reverse('chat-list-create')
         response = self.client.get(url)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
