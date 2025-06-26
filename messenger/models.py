@@ -29,9 +29,13 @@ class Chat(models.Model):
         auto_now=True,
         verbose_name='Дата последнего обновления'
     )
-    deleted_for = models.ManyToManyField(CustomUser, related_name='hidden_chats', blank=True)
+    deleted_for = models.ManyToManyField(
+        CustomUser, related_name='hidden_chats', blank=True,
+        verbose_name='Скрыто для'
+    )
 
     def is_visible_to(self, user):
+        """Проверка, видит ли пользователь этот чат"""
         return user not in self.deleted_for.all()
 
     class Meta:
@@ -43,7 +47,6 @@ class Chat(models.Model):
         ]
 
 
-
 class Message(models.Model):
     """Модель сообщения в чате"""
     chat = models.ForeignKey(
@@ -53,10 +56,6 @@ class Message(models.Model):
         verbose_name='Чат',
         help_text='Чат, к которому относится сообщение'
     )
-    likes = models.ManyToManyField(
-        CustomUser,
-        related_name='liked_messages'
-    )
     author = models.ForeignKey(
         CustomUser,
         on_delete=models.CASCADE,
@@ -65,19 +64,29 @@ class Message(models.Model):
     )
     content = models.TextField(
         verbose_name='Текст сообщения',
-        validators=[MinLengthValidator(
-            1,
-            "Сообщение не может быть пустым")]
+        validators=[MinLengthValidator(1, "Сообщение не может быть пустым")]
     )
     created_at = models.DateTimeField(
         auto_now_add=True,
         verbose_name='Дата отправки'
     )
-    is_deleted = models.BooleanField(default=False)
-    deleted_for = models.ManyToManyField(CustomUser, related_name='hidden_messages', blank=True)
+    is_deleted = models.BooleanField(default=False, verbose_name='Удалено')
+    deleted_for = models.ManyToManyField(
+        CustomUser, related_name='hidden_messages', blank=True,
+        verbose_name='Скрыто для'
+    )
 
     def is_visible_to(self, user):
+        """Проверяет, видно ли сообщение пользователю (не удалено и не скрыто)"""
         return user not in self.deleted_for.all() and not self.is_deleted
+
+    def like_count(self):
+        """Возвращает количество лайков для сообщения"""
+        return self.likes.count()
+
+    def liked_by_user(self, user):
+        """Проверяет, лайкал ли пользователь это сообщение"""
+        return self.likes.filter(user=user).exists()
 
     class Meta:
         verbose_name = 'Сообщение'
@@ -86,3 +95,29 @@ class Message(models.Model):
         indexes = [
             models.Index(fields=['chat', 'created_at']),
         ]
+
+
+class MessageLike(models.Model):
+    """Связь лайков между пользователями и сообщениями"""
+    user = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name='message_likes',
+        verbose_name='Пользователь'
+    )
+    message = models.ForeignKey(
+        Message,
+        on_delete=models.CASCADE,
+        related_name='likes',
+        verbose_name='Сообщение'
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Дата лайка')
+
+    class Meta:
+        unique_together = ('user', 'message')
+        verbose_name = 'Лайк сообщения'
+        verbose_name_plural = 'Лайки сообщений'
+
+    def __str__(self):
+        return f"{self.user.phone_number} liked message {self.message.id}"
+

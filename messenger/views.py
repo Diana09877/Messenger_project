@@ -1,4 +1,4 @@
-from rest_framework import generics, permissions
+from rest_framework import generics, permissions, status
 from rest_framework.generics import CreateAPIView
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -12,8 +12,18 @@ from .serializers import (
     ChatListSerializer,
     MessageCreateSerializer,
     ChatDetailSerializer,
-    ChatUpdateSerializer, MessageDeleteSerializer, ChatDeleteSerializer
+    ChatUpdateSerializer,
+    MessageDeleteSerializer,
+    ChatDeleteSerializer
 )
+
+
+# permission класс для проверки прав на удаление сообщения
+class IsAuthorOrChatCreator(permissions.BasePermission):
+    def has_object_permission(self, request, view, obj):
+        # obj — сообщение
+        return obj.author == request.user or obj.chat.creator == request.user
+
 
 @extend_schema(
     summary="Создать сообщение",
@@ -22,7 +32,6 @@ from .serializers import (
     responses={201: MessageCreateSerializer}
 )
 class MessageCreateAPIView(CreateAPIView):
-    """Создание сообщения и добавление его в чат"""
     permission_classes = [IsAuthenticated]
     serializer_class = MessageCreateSerializer
 
@@ -34,21 +43,20 @@ class MessageCreateAPIView(CreateAPIView):
     parameters=[OpenApiParameter(name='message_id', location=OpenApiParameter.PATH, required=True, type=int)]
 )
 class MessageLikeAPIView(APIView):
-    """Поставить или снять лайк с сообщения"""
     permission_classes = [IsAuthenticated]
 
     def post(self, request, message_id):
         user = request.user
         message = get_object_or_404(Message, id=message_id)
         if user not in message.chat.participants.all():
-            return Response(status=403)
+            return Response({"detail": "Вы не участник чата."}, status=status.HTTP_403_FORBIDDEN)
         if message.likes.filter(id=user.id).exists():
             message.likes.remove(user)
             liked = False
         else:
             message.likes.add(user)
             liked = True
-        return Response({'liked': liked}, status=200)
+        return Response({'liked': liked}, status=status.HTTP_200_OK)
 
 
 @extend_schema(
@@ -57,7 +65,6 @@ class MessageLikeAPIView(APIView):
     responses={200: ChatListSerializer, 201: ChatCreateSerializer}
 )
 class ChatListCreateAPIView(generics.ListCreateAPIView):
-    """Показать список чатов или создать новый чат"""
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
@@ -79,12 +86,9 @@ class ChatListCreateAPIView(generics.ListCreateAPIView):
     parameters=[OpenApiParameter(name='pk', location=OpenApiParameter.PATH, required=True, type=int)]
 )
 class ChatRetrieveUpdateAPIView(generics.RetrieveUpdateAPIView):
-    """Получить или обновить чат"""
     permission_classes = [IsAuthenticated]
 
     def get_serializer_class(self):
-        # Если обновляем  используем один сериализатор,
-        # если просто получаем другой
         if self.request.method in ['PATCH', 'PUT']:
             return ChatUpdateSerializer
         return ChatDetailSerializer
@@ -102,10 +106,10 @@ class ChatRetrieveUpdateAPIView(generics.RetrieveUpdateAPIView):
                     'is_group': chat.is_group,
                     'participants': [p.phone_number for p in chat.participants.all()],
                     'messages': [],
-                })
-            return Response({'detail': 'Forbidden'}, status=403)
-        data = self.get_serializer(chat).data
-        return Response(data, status=200)
+                }, status=status.HTTP_200_OK)
+            return Response({'detail': 'Доступ запрещён'}, status=status.HTTP_403_FORBIDDEN)
+        serializer = self.get_serializer(chat, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 @extend_schema(
@@ -115,59 +119,48 @@ class ChatRetrieveUpdateAPIView(generics.RetrieveUpdateAPIView):
     responses={200: ChatListSerializer(many=True)}
 )
 class ChatSearchAPIView(generics.ListAPIView):
-    """Поиск чатов по названию"""
     serializer_class = ChatListSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         user = self.request.user
         query = self.request.query_params.get('q', '')
+        return Chat.objects.filter(participants=user, chat_name__icontains=query)
 
-        return Chat.objects.filter(
-            participants=user,
-            chat_name__icontains=query # Поиск без учёта регистра
-        )
 
 @extend_schema(
     summary="Удалить чат",
-    request=MessageDeleteSerializer,
-    responses={200: OpenApiResponse(description="Чат удален")}
+    request=ChatDeleteSerializer,
+    responses={204: OpenApiResponse(description="Чат удалён")}
 )
 class ChatDeleteAPIView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
 
     def delete(self, request, chat_id):
         chat = get_object_or_404(Chat, id=chat_id)
         if chat.creator != request.user:
-            return Response({"error": "Только создатель может удалить этот чат."},
-                            status=403)
-
+            return Response({"error": "Только создатель может удалить этот чат."}, status=status.HTTP_403_FORBIDDEN)
         if chat.is_group:
             chat.delete()
-            return Response({"detail": "Групповой чат удалён."}, status=204)
+            return Response(status=status.HTTP_204_NO_CONTENT)
         else:
             if request.user in chat.participants.all():
                 chat.participants.remove(request.user)
-                return Response(status=204)
-            else:
-                return Response({"error": "Вы не участник этого чата."}, status=400)
+                return Response(status=status.HTTP_204_NO_CONTENT)
+            return Response({"error": "Вы не участник этого чата."}, status=status.HTTP_400_BAD_REQUEST)
 
 
 @extend_schema(
     summary="Удалить сообщение",
     request=MessageDeleteSerializer,
-    responses={200: OpenApiResponse(description="Сообщение удалено")}
+    responses={204: OpenApiResponse(description="Сообщение удалено")}
 )
 class MessageDeleteAPIView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAuthorOrChatCreator]
 
     def delete(self, request, message_id):
         message = get_object_or_404(Message, id=message_id)
-
-        # Только автор сообщения или создатель чата может удалить сообщение
-        if message.author != request.user and message.chat.creator != request.user:
-            return Response({"error": "Нет прав на удаление этого сообщения."},
-                            status=403)
-
-        message.delete()
-        return Response({"detail": "Сообщение удалено."}, status=204)
+        self.check_object_permissions(request, message)
+        message.is_deleted = True
+        message.save()
+        return Response(status=status.HTTP_204_NO_CONTENT)

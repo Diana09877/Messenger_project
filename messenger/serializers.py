@@ -11,6 +11,7 @@ class MessageSerializer(serializers.ModelSerializer):
     chat_id = serializers.IntegerField(read_only=True)
     liked = serializers.SerializerMethodField()
     liked_by = serializers.SerializerMethodField()
+    likes_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
@@ -21,11 +22,12 @@ class MessageSerializer(serializers.ModelSerializer):
             'content',
             'created_at',
             'liked',
-            'liked_by'
+            'liked_by',
+            'likes_count',
         ]
 
     def get_liked(self, obj):
-        request = self.context.get('request')
+        request = self.context.get('request', None)
         if not request or not hasattr(request, 'user'):
             return False
         return obj.likes.filter(id=request.user.id).exists()
@@ -35,6 +37,9 @@ class MessageSerializer(serializers.ModelSerializer):
             user.first_name or user.phone_number
             for user in obj.likes.all()
         ]
+
+    def get_likes_count(self, obj):
+        return obj.likes.count()
 
 
 class MessageCreateSerializer(serializers.ModelSerializer):
@@ -129,6 +134,7 @@ class ChatDetailSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'chat_name',
+            'avatar',
             'messages',
             'is_group',
             'participants',
