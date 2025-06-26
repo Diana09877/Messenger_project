@@ -30,16 +30,17 @@ class MessageSerializer(serializers.ModelSerializer):
         request = self.context.get('request', None)
         if not request or not hasattr(request, 'user'):
             return False
-        return obj.likes.filter(id=request.user.id).exists()
+        return obj.likes.filter(user=request.user).exists()
 
     def get_liked_by(self, obj):
         return [
-            user.first_name or user.phone_number
-            for user in obj.likes.all()
+            like.user.first_name or like.user.phone_number
+            for like in obj.likes.all()
         ]
 
     def get_likes_count(self, obj):
         return obj.likes.count()
+
 
 
 class MessageCreateSerializer(serializers.ModelSerializer):
@@ -134,7 +135,6 @@ class ChatDetailSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'chat_name',
-            'avatar',
             'messages',
             'is_group',
             'participants',

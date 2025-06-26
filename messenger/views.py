@@ -4,7 +4,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.shortcuts import get_object_or_404
-from .models import Chat, Message
+from .models import Chat, Message, MessageLike
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 
 from .serializers import (
@@ -48,15 +48,20 @@ class MessageLikeAPIView(APIView):
     def post(self, request, message_id):
         user = request.user
         message = get_object_or_404(Message, id=message_id)
+
         if user not in message.chat.participants.all():
-            return Response({"detail": "Вы не участник чата."}, status=status.HTTP_403_FORBIDDEN)
-        if message.likes.filter(id=user.id).exists():
-            message.likes.remove(user)
+            return Response(status=403)
+
+        like = MessageLike.objects.filter(user=user, message=message).first()
+
+        if like:
+            like.delete()
             liked = False
         else:
-            message.likes.add(user)
+            MessageLike.objects.create(user=user, message=message)
             liked = True
-        return Response({'liked': liked}, status=status.HTTP_200_OK)
+
+        return Response({'liked': liked}, status=200)
 
 
 @extend_schema(
