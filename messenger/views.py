@@ -13,16 +13,7 @@ from .serializers import (
     MessageCreateSerializer,
     ChatDetailSerializer,
     ChatUpdateSerializer,
-    MessageDeleteSerializer,
-    ChatDeleteSerializer
 )
-
-
-# permission класс для проверки прав на удаление сообщения
-class IsAuthorOrChatCreator(permissions.BasePermission):
-    def has_object_permission(self, request, view, obj):
-        # obj — сообщение
-        return obj.author == request.user or obj.chat.creator == request.user
 
 
 @extend_schema(
@@ -135,7 +126,6 @@ class ChatSearchAPIView(generics.ListAPIView):
 
 @extend_schema(
     summary="Удалить чат",
-    request=ChatDeleteSerializer,
     responses={204: OpenApiResponse(description="Чат удалён")}
 )
 class ChatDeleteAPIView(APIView):
@@ -143,29 +133,35 @@ class ChatDeleteAPIView(APIView):
 
     def delete(self, request, chat_id):
         chat = get_object_or_404(Chat, id=chat_id)
-        if chat.creator != request.user:
-            return Response({"error": "Только создатель может удалить этот чат."}, status=status.HTTP_403_FORBIDDEN)
-        if chat.is_group:
-            chat.delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
-        else:
-            if request.user in chat.participants.all():
-                chat.participants.remove(request.user)
-                return Response(status=status.HTTP_204_NO_CONTENT)
-            return Response({"error": "Вы не участник этого чата."}, status=status.HTTP_400_BAD_REQUEST)
+        user = request.user
 
+        if user in chat.participants.all():
+            chat.participants.remove(user)
+            return Response({"detail": "Вы вышли из чата."}, status=status.HTTP_204_NO_CONTENT)
+        else:
+            return Response({"detail": "Вы не являетесь участником чата."}, status=status.HTTP_400_BAD_REQUEST)
 
 @extend_schema(
     summary="Удалить сообщение",
-    request=MessageDeleteSerializer,
     responses={204: OpenApiResponse(description="Сообщение удалено")}
 )
 class MessageDeleteAPIView(APIView):
-    permission_classes = [IsAuthenticated, IsAuthorOrChatCreator]
+    """
+    Удаляет сообщение только автор или участник чата
+    """
+    permission_classes = [IsAuthenticated]
 
     def delete(self, request, message_id):
         message = get_object_or_404(Message, id=message_id)
-        self.check_object_permissions(request, message)
+        user = request.user
+        if message.author != user and user not in message.chat.participants.all():
+            return Response(
+                {"detail": "Нет прав на удаление этого сообщения."},
+                status=status.HTTP_403_FORBIDDEN
+            )
         message.is_deleted = True
         message.save()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(
+            {"detail": "Сообщение удалено."},
+            status=status.HTTP_204_NO_CONTENT
+        )
